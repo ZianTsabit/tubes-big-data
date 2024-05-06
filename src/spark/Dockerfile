@@ -20,10 +20,6 @@ RUN wget -qO- https://archive.apache.org/dist/spark/spark-$SPARK_VERSION/spark-$
     mv /opt/spark-$SPARK_VERSION-bin-hadoop$HADOOP_VERSION $SPARK_HOME && \
     rm -rf $SPARK_HOME/examples $SPARK_HOME/kubernetes $SPARK_HOME/data
 
-# Copy your Spark application code into the image
-COPY main.py /opt/spark_app/main.py
-COPY input_data.json /opt/spark_app/input_data.json
-
 COPY load.py /opt/spark_app/load.py
 COPY tubes-big-data-422412-f473452a086a.json /opt/spark_app/tubes-big-data-422412-f473452a086a.json
 
