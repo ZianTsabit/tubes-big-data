@@ -1,4 +1,20 @@
-# tubes-big-data
+# Tugas Besar IF4044 - Teknologi Big Data
+
+Crypto transaction in Indonesia, data taken from Indodax public API.
+
+## How to Build?
+
+```
+docker build -t spark_stream .
+```
+
+## How to Run?
+
+```
+docker run spark_stream
+```
+
+## Contributors
 
 | NIM      | Nama                   |
 | -------- | ---------------------- |
