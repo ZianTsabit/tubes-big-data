@@ -5,16 +5,17 @@ import websocket
 import json
 
 # Initialize Spark session
-spark = SparkSession.builder \
-    .appName("WebSocketToBigQuery") \
-    .getOrCreate()
+spark: SparkSession = SparkSession.builder.appName("WebSocketToBigQuery").getOrCreate()
+rdd = spark.sparkContext.emptyRDD()
 
 # Initialize BigQuery client using the service account credentials
-bigquery_client = bigquery.Client.from_service_account_json('tubes-big-data-422412-f473452a086a.json')
+bigquery_client = bigquery.Client.from_service_account_json(
+    "tubes-big-data-422412-f473452a086a.json"
+)
 
 # Define BigQuery dataset and table
-dataset_id = 'crypto_transaction_indodax'
-table_id = 'btc_transaction'
+dataset_id = "crypto_transaction_indodax"
+table_id = "btc_transaction"
 table_ref = bigquery_client.dataset(dataset_id).table(table_id)
 
 # Define schema for the BigQuery table
@@ -43,19 +44,19 @@ auth_message = {
     "params": {
         "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE5NDY2MTg0MTV9.UR1lBM6Eqh0yWz-PVirw1uPCxe60FdchR8eNVdsskeo"
     },
-    "id": 1
+    "id": 1,
 }
 
 subscription_message = {
     "method": 1,
-    "params": {
-        "channel": "market:trade-activity-btcidr"
-    },
-    "id": 2
+    "params": {"channel": "market:trade-activity-btcidr"},
+    "id": 2,
 }
 
-def insert_into_bigquery(pairs, timestamp, seq_number, action, price,
-                         volume_idr, volume_btc):
+
+def insert_into_bigquery(
+    pairs, timestamp, seq_number, action, price, volume_idr, volume_btc
+):
     row = {
         "pairs": pairs,
         "timestamp": timestamp,
@@ -63,7 +64,7 @@ def insert_into_bigquery(pairs, timestamp, seq_number, action, price,
         "action": action,
         "price": price,
         "volume_idr": float(volume_idr),
-        "volume_btc": float(volume_btc)
+        "volume_btc": float(volume_btc),
     }
     print(row)
     # Insert row into BigQuery
@@ -73,19 +74,23 @@ def insert_into_bigquery(pairs, timestamp, seq_number, action, price,
     else:
         print("Data inserted into BigQuery successfully!")
 
+
 def on_message(ws, message):
     data = json.loads(message)
-    if 'result' in data and 'data' in data['result']:
-        for item in data['result']['data']['data']:
+    if "result" in data and "data" in data["result"]:
+        for item in data["result"]["data"]["data"]:
             insert_into_bigquery(*item)
     else:
         print("Invalid message format")
 
+
 def on_error(ws, error):
     print("Error:", error)
 
+
 def on_close(ws):
     print("### closed ###")
+
 
 def on_open(ws):
     print("### opened ###")
@@ -93,12 +98,12 @@ def on_open(ws):
     ws.send(json.dumps(auth_message))
     ws.send(json.dumps(subscription_message))
 
+
 if __name__ == "__main__":
     # Connect to WebSocket
-    ws = websocket.WebSocketApp(ws_url,
-                                on_message=on_message,
-                                on_error=on_error,
-                                on_close=on_close)
-    
+    ws = websocket.WebSocketApp(
+        ws_url, on_message=on_message, on_error=on_error, on_close=on_close
+    )
+
     ws.on_open = on_open
     ws.run_forever()
