@@ -7,7 +7,7 @@ RUN apt-get update && \
     apt-get install -y wget && \
     rm -rf /var/lib/apt/lists/*
 
-RUN pip3 install google-cloud-bigquery websocket-client
+RUN pip3 install google-cloud-bigquery websocket-client apscheduler
 
 # Set environment variables
 ENV SPARK_VERSION=3.2.0

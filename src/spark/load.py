@@ -1,5 +1,6 @@
 from google.cloud import bigquery
 from pyspark.sql import SparkSession
+from apscheduler.schedulers.background import BackgroundScheduler
 
 import websocket
 import json
@@ -85,10 +86,11 @@ def insert_into_bigquery(
 
 
 def on_message(ws, message):
+    global rdd
     data = json.loads(message)
     if "result" in data and "data" in data["result"]:
-        for item in data["result"]["data"]["data"]:
-            insert_into_bigquery(*item)
+        new_rdd = spark.sparkContext.parallelize(data["result"]["data"]["data"])
+        rdd = rdd.union(new_rdd)
     else:
         print("Invalid message format")
 
@@ -108,11 +110,36 @@ def on_open(ws):
     ws.send(json.dumps(subscription_message))
 
 
+def insert_rdd_to_bigquery():
+    global rdd
+    if not rdd.isEmpty():
+        rdd.foreach(
+            lambda x: insert_into_bigquery(
+                x["pairs"],
+                x["timestamp"],
+                x["last_price"],
+                x["lowest_price_24h"],
+                x["highest_price_24h"],
+                x["price_at_t_minus_24h"],
+                x["volume_idr_24h"],
+                x["volume_coin_24h"],
+            )
+        )
+        rdd = spark.sparkContext.emptyRDD()
+
+
 if __name__ == "__main__":
+    # Run insert rdd to bigquery every 5 minutes
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(insert_rdd_to_bigquery, "interval", minutes=5)
+    scheduler.start()
+
     # Connect to WebSocket
     ws = websocket.WebSocketApp(
-        ws_url, on_message=on_message, on_error=on_error, on_close=on_close
+        ws_url,
+        on_message=on_message,
+        on_error=on_error,
+        on_close=on_close,
+        on_open=on_open,
     )
-
-    ws.on_open = on_open
     ws.run_forever()
