@@ -4,6 +4,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 import websocket
 import json
+import logging
 
 # Initialize Spark session
 spark: SparkSession = SparkSession.builder.appName("WebSocketToBigQuery").getOrCreate()
@@ -55,45 +56,52 @@ subscription_message = {
     "id": 2,
 }
 
+def validate_row(row):
+    required_keys = [
+        "pairs", "timestamp", "last_price", "lowest_price_24h",
+        "highest_price_24h", "price_at_t_minus_24h",
+        "volume_idr_24h", "volume_coin_24h"
+    ]
+    for key in required_keys:
+        if key not in row:
+            return False
+        if row[key] is None:
+            return False
+    return True
 
-def insert_into_bigquery(
-    pairs,
-    timestamp,
-    last_price,
-    lowest_price,
-    highest_price,
-    price_at_t_minus_24h,
-    volume_idr_24h,
-    volume_coin_24h,
-):
-    row = {
-        "pairs": pairs,
-        "timestamp": timestamp,
-        "last_price": last_price,
-        "lowest_price_24h": lowest_price,
-        "highest_price_24h": highest_price,
-        "price_at_t_minus_24h": price_at_t_minus_24h,
-        "volume_idr_24h": volume_idr_24h,
-        "volume_coin_24h": volume_coin_24h,
-    }
-    print(row)
-    # Insert row into BigQuery
-    errors = bigquery_client.insert_rows_json(table_ref, [row])
-    if errors:
-        print(f"Errors: {errors}")
-    else:
-        print("Data inserted into BigQuery successfully!")
-
+def insert_into_bigquery(rows):
+    valid_rows = [row for row in rows if validate_row(row)]
+    if len(valid_rows) != len(rows):
+        print("Some rows were invalid and have not been inserted.")
+    if valid_rows:
+        errors = bigquery_client.insert_rows_json(table_ref, valid_rows)
+        if errors:
+            print(f"Errors: {errors}")
+        else:
+            print(f"{len(valid_rows)} Data inserted into BigQuery successfully!")
 
 def on_message(ws, message):
     global rdd
+    print("Received message")
     data = json.loads(message)
     if "result" in data and "data" in data["result"]:
-        new_rdd = spark.sparkContext.parallelize(data["result"]["data"]["data"])
-        rdd = rdd.union(new_rdd)
+        # Extract the list of data and convert each item to the correct dictionary format
+        new_data = [
+            {
+                "pairs": item[0],
+                "timestamp": item[1],
+                "last_price": item[2],
+                "lowest_price_24h": item[3],
+                "highest_price_24h": item[4],
+                "price_at_t_minus_24h": item[5],
+                "volume_idr_24h": item[6],
+                "volume_coin_24h": item[7],
+            } for item in data["result"]["data"]["data"]
+        ]
+        new_rdd = spark.sparkContext.parallelize(new_data)  # Create RDD from the formatted data
+        rdd = rdd.union(new_rdd)  # Union the new RDD with the existing one
     else:
-        print("Invalid message format")
-
+        print("Invalid message format: %s", str(message))
 
 def on_error(ws, error):
     print("Error:", error)
@@ -112,23 +120,15 @@ def on_open(ws):
 
 def insert_rdd_to_bigquery():
     global rdd
+    print("Inserting RDD to BigQuery")
     if not rdd.isEmpty():
-        rdd.foreach(
-            lambda x: insert_into_bigquery(
-                x["pairs"],
-                x["timestamp"],
-                x["last_price"],
-                x["lowest_price_24h"],
-                x["highest_price_24h"],
-                x["price_at_t_minus_24h"],
-                x["volume_idr_24h"],
-                x["volume_coin_24h"],
-            )
-        )
-        rdd = spark.sparkContext.emptyRDD()
+        rows = rdd.collect()  # Collect RDD data into a list of rows
+        insert_into_bigquery(rows)  # Insert all collected rows at once
+        rdd = spark.sparkContext.emptyRDD()  # Reset RDD after insertion
 
 
 if __name__ == "__main__":
+    # logging.getLogger('apscheduler').setLevel(logging.WARNING)
     # Run insert rdd to bigquery every 5 minutes
     scheduler = BackgroundScheduler()
     scheduler.add_job(insert_rdd_to_bigquery, "interval", minutes=5)
