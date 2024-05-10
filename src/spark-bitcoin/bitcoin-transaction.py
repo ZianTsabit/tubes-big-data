@@ -55,35 +55,60 @@ subscription_message = {
 }
 
 
-def insert_into_bigquery(
-    pairs, timestamp, seq_number, action, price, volume_idr, volume_btc
-):
-    row = {
-        "pairs": pairs,
-        "timestamp": timestamp,
-        "seq_number": seq_number,
-        "action": action,
-        "price": price,
-        "volume_idr": float(volume_idr),
-        "volume_btc": float(volume_btc),
-    }
-    print(row)
-    # Insert row into BigQuery
-    errors = bigquery_client.insert_rows_json(table_ref, [row])
-    if errors:
-        print(f"Errors: {errors}")
-    else:
-        print("Data inserted into BigQuery successfully!")
+def validate_row(row):
+    required_keys = [
+        "pairs",
+        "timestamp",
+        "seq_number",
+        "action",
+        "price",
+        "volume_idr",
+        "volume_btc",
+    ]
+    for key in required_keys:
+        if key not in row:
+            return False
+        if row[key] is None:
+            return False
+    return True
+
+
+def insert_into_bigquery(rows):
+    valid_rows = [row for row in rows if validate_row(row)]
+    if len(valid_rows) != len(rows):
+        print("Some rows were invalid and have not been inserted.")
+    if valid_rows:
+        errors = bigquery_client.insert_rows_json(table_ref, valid_rows)
+        if errors:
+            print(f"Errors: {errors}")
+        else:
+            print(f"{len(valid_rows)} Data inserted into BigQuery successfully!")
 
 
 def on_message(ws, message):
     global rdd
+    print("Received message")
     data = json.loads(message)
     if "result" in data and "data" in data["result"]:
-        new_rdd = spark.sparkContext.parallelize(data["result"]["data"]["data"])
-        rdd = rdd.union(new_rdd)
+        # Extract the list of data and convert each item to the correct dictionary format
+        new_data = [
+            {
+                "pairs": item[0],
+                "timestamp": item[1],
+                "seq_number": item[2],
+                "action": item[3],
+                "price": item[4],
+                "volume_idr": float(item[5]),
+                "volume_btc": float(item[6]),
+            }
+            for item in data["result"]["data"]["data"]
+        ]
+        new_rdd = spark.sparkContext.parallelize(
+            new_data
+        )  # Create RDD from the formatted data
+        rdd = rdd.union(new_rdd)  # Union the new RDD with the existing one
     else:
-        print("Invalid message format")
+        print("Invalid message format: %s", str(message))
 
 
 def on_error(ws, error):
@@ -103,19 +128,11 @@ def on_open(ws):
 
 def insert_rdd_to_bigquery():
     global rdd
+    print("Inserting RDD to BigQuery")
     if not rdd.isEmpty():
-        rdd.foreach(
-            lambda x: insert_into_bigquery(
-                x["pairs"],
-                x["timestamp"],
-                x["seq_number"],
-                x["action"],
-                x["price"],
-                x["volume_idr"],
-                x["volume_btc"],
-            )
-        )
-        rdd = spark.sparkContext.emptyRDD()
+        rows = rdd.collect()  # Collect RDD data into a list of rows
+        insert_into_bigquery(rows)  # Insert all collected rows at once
+        rdd = spark.sparkContext.emptyRDD()  # Reset RDD after insertion
 
 
 if __name__ == "__main__":

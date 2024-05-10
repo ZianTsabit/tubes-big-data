@@ -56,11 +56,17 @@ subscription_message = {
     "id": 2,
 }
 
+
 def validate_row(row):
     required_keys = [
-        "pairs", "timestamp", "last_price", "lowest_price_24h",
-        "highest_price_24h", "price_at_t_minus_24h",
-        "volume_idr_24h", "volume_coin_24h"
+        "pairs",
+        "timestamp",
+        "last_price",
+        "lowest_price_24h",
+        "highest_price_24h",
+        "price_at_t_minus_24h",
+        "volume_idr_24h",
+        "volume_coin_24h",
     ]
     for key in required_keys:
         if key not in row:
@@ -68,6 +74,7 @@ def validate_row(row):
         if row[key] is None:
             return False
     return True
+
 
 def insert_into_bigquery(rows):
     valid_rows = [row for row in rows if validate_row(row)]
@@ -79,6 +86,7 @@ def insert_into_bigquery(rows):
             print(f"Errors: {errors}")
         else:
             print(f"{len(valid_rows)} Data inserted into BigQuery successfully!")
+
 
 def on_message(ws, message):
     global rdd
@@ -96,12 +104,16 @@ def on_message(ws, message):
                 "price_at_t_minus_24h": item[5],
                 "volume_idr_24h": item[6],
                 "volume_coin_24h": item[7],
-            } for item in data["result"]["data"]["data"]
+            }
+            for item in data["result"]["data"]["data"]
         ]
-        new_rdd = spark.sparkContext.parallelize(new_data)  # Create RDD from the formatted data
+        new_rdd = spark.sparkContext.parallelize(
+            new_data
+        )  # Create RDD from the formatted data
         rdd = rdd.union(new_rdd)  # Union the new RDD with the existing one
     else:
         print("Invalid message format: %s", str(message))
+
 
 def on_error(ws, error):
     print("Error:", error)
